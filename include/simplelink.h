@@ -368,9 +368,15 @@ typedef _u8   _SlArgSize_t;
 typedef _i16   _SlDataSize_t;
 typedef _i16   _SlReturnVal_t;
 
+/*
+ * mkm@cesanta.com: the header continues and the extern "C"
+ * block is actually closed later
+ */
+#if 0
 #ifdef    __cplusplus
 }
 #endif /*  __cplusplus */
+#endif
 
 
 
@@ -444,8 +450,10 @@ typedef _i16   _SlReturnVal_t;
 
 
 
+#ifndef __CONCAT
 #define __CONCAT(x,y)	x ## y
 #define __CONCAT2(x,y)	__CONCAT(x,y)
+#endif
 
 
 /*

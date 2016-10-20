@@ -1,7 +1,7 @@
 /*
- * device.c - CC31xx/CC32xx Host Driver Implementation
+ * user.h - CC31xx/CC32xx Host Driver Implementation
  *
- * Copyright (C) 2015 Texas Instruments Incorporated - http://www.ti.com/ 
+ * Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com/ 
  * 
  * 
  *  Redistribution and use in source and binary forms, with or without 
@@ -31,585 +31,1013 @@
  *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
  *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+*
+*/
+    
+
+#ifndef __USER_H__
+#define __USER_H__
+
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+/*!
+
+    \addtogroup Porting
+    @{
+
+*/
+
+/*!
+ ******************************************************************************
+
+    \defgroup       porting_user_include        User Include Files
+ 
+    This section IS NOT REQUIRED in case user provided primitives are handled 
+    in makefiles or project configurations (IDE) 
+
+    PORTING ACTION: 
+        - Include all required header files for the definition of:
+            -# Transport layer library API (e.g. SPI, UART)
+            -# OS primitives definitions (e.g. Task spawn, Semaphores)
+            -# Memory management primitives (e.g. alloc, free)
+
+	in order to "install" external SimpleLink library one should follow the next steps:
+	1. Include the external library API header file (i.e. #include "IOT.h")
+	2. Define each one of the desired external lib with one (out of 5) of the following:
+      #define SL_EXT_LIB_1 <Your external lib name>
+      #define SL_EXT_LIB_2 <Your external lib name>
+      #define SL_EXT_LIB_3 <Your external lib name>
+      #define SL_EXT_LIB_4 <Your external lib name>
+      #define SL_EXT_LIB_5 <Your external lib name>
+
+ ******************************************************************************
+ */
+
+/*!
+ ******************************************************************************
+
+    \defgroup       porting_capabilities        Capability Set Definition
+
+    This section IS NOT REQUIRED in case one of the following pre defined 
+    capabilities set is in use:
+    - SL_TINY
+    - SL_SMALL
+    - SL_FULL
+
+    PORTING ACTION: 
+        - Define one of the pre-defined capabilities set or uncomment the
+          relevant definitions below to select the required capabilities
+    @{
+ *******************************************************************************
+ */
+
+/*!
+	\def		MAX_CONCURRENT_ACTIONS
+
+    \brief      Defines the maximum number of concurrent action in the system
+				Min:1 , Max: 32
+                    
+                Actions which has async events as return, can be 
+
+    \sa             
+
+    \note       In case there are not enough resources for the actions needed in the system,
+	        	error is received: POOL_IS_EMPTY
+			    one option is to increase MAX_CONCURRENT_ACTIONS 
+				(improves performance but results in memory consumption)
+		     	Other option is to call the API later (decrease performance)
+
+    \warning    In case of setting to one, recommend to use non-blocking recv\recvfrom to allow
+				multiple socket recv
+*/
+
+#ifndef SL_TINY_EXT
+#define MAX_CONCURRENT_ACTIONS 10
+#else
+#define MAX_CONCURRENT_ACTIONS 1
+#endif
+/*!
+	\def		CPU_FREQ_IN_MHZ
+    \brief      Defines CPU frequency for Host side, for better accuracy of busy loops, if any
+    \sa             
+    \note       
+
+    \warning    If not set the default CPU frequency is set to 200MHz
+                This option will be deprecated in future release
+*/ 
+/*
+#define CPU_FREQ_IN_MHZ        25
 */
 
 
+/*!
+	\def		SL_INC_ARG_CHECK
 
-/*****************************************************************************/
-/* Include files                                                             */
-/*****************************************************************************/
-#include "simplelink.h"
-#include "protocol.h"
-#include "flowcont.h"
-#include "driver.h"
-#include "wlan.h"
+    \brief      Defines whether the SimpleLink driver perform argument check 
+                or not
+                    
+                When defined, the SimpleLink driver perform argument check on 
+                function call. Removing this define could reduce some code 
+                size and improve slightly the performances but may impact in 
+                unpredictable behaviour in case of invalid arguments
 
+    \sa             
 
-/*****************************************************************************/
-/* Internal functions                                                        */
-/*****************************************************************************/
+    \note       belongs to \ref porting_sec
 
-static SlWlanMode_e _sl_GetStartResponseConvert(_i32 Status);
-
-
-static const SlWlanMode_e StartResponseLUT[8] = 
-{
-    ROLE_UNKNOWN,
-    ROLE_STA,
-    ROLE_STA_ERR,
-    ROLE_AP,
-    ROLE_AP_ERR,
-    ROLE_P2P,
-    ROLE_P2P_ERR,
-    INIT_CALIB_FAIL
-};
+    \warning    Removing argument check may cause unpredictable behaviour in 
+                case of invalid arguments. 
+                In this case the user is responsible to argument validity 
+                (for example all handlers must not be NULL)
+*/
+#define SL_INC_ARG_CHECK
 
 
-static SlWlanMode_e _sl_GetStartResponseConvert(_i32 Status)
-{
-    return StartResponseLUT[Status & 0x7];
-}
+/*!
+    \def		SL_INC_STD_BSD_API_NAMING
 
-
-/*****************************************************************************/
-/* API Functions                                                             */
-/*****************************************************************************/
-
-
-
-/*****************************************************************************/
-/* sl_Task                                                                   */
-/*****************************************************************************/
-#if _SL_INCLUDE_FUNC(sl_Task)
-void sl_Task(void)
-{
-#ifdef _SlTaskEntry
-    (void)_SlTaskEntry();
-#endif
-}
-#endif
-
-/*****************************************************************************/
-/* sl_Start                                                                  */
-/*****************************************************************************/
-#if _SL_INCLUDE_FUNC(sl_Start)
-_i16 sl_Start(const void* pIfHdl, _i8*  pDevName, const P_INIT_CALLBACK pInitCallBack)
-{
-    _u8 ObjIdx = MAX_CONCURRENT_ACTIONS;
-    InitComplete_t  AsyncRsp;
-
-    /* verify no erorr handling in progress. if in progress than
-    ignore the API execution and return immediately with an error */
-    VERIFY_NO_ERROR_HANDLING_IN_PROGRESS();
-    /* Perform any preprocessing before enable networking services */
-#ifdef sl_DeviceEnablePreamble
-    sl_DeviceEnablePreamble();
-#endif
-
-    /* ControlBlock init */
-    (void)_SlDrvDriverCBInit();
-
-    /* open the interface: usually SPI or UART */
-    if (NULL == pIfHdl)
-    {
-        g_pCB->FD = sl_IfOpen((void *)pDevName, 0);
-    }
-    else
-    {
-        g_pCB->FD = (_SlFd_t)pIfHdl;
-    }
+    \brief      Defines whether SimpleLink driver should expose standard BSD 
+                APIs or not
     
-    ObjIdx = _SlDrvProtectAsyncRespSetting((_u8 *)&AsyncRsp, START_STOP_ID, SL_MAX_SOCKETS);
+                When defined, the SimpleLink driver in addition to its alternative
+                BSD APIs expose also standard BSD APIs.
+                Standard BSD API includes the following functions:
+                socket , close , accept , bind , listen	, connect , select , 
+                setsockopt	, getsockopt , recv , recvfrom , write , send , sendto , 
+                gethostbyname
 
-    if (MAX_CONCURRENT_ACTIONS == ObjIdx)
-    {
-        return SL_POOL_IS_EMPTY;
-    }
+    \sa         
 
-    if( g_pCB->FD >= (_SlFd_t)0)
-    {
-        sl_DeviceDisable();
+    \note       belongs to \ref porting_sec
 
-        sl_IfRegIntHdlr((SL_P_EVENT_HANDLER)_SlDrvRxIrqHandler, NULL);
+    \warning        
+*/
 
-        g_pCB->pInitCallback = pInitCallBack;
-        
-        sl_DeviceEnable();
-        
-        if (NULL == pInitCallBack)
-        {
-#ifdef SL_TINY_EXT
-            _SlDrvSyncObjWaitForever(&g_pCB->ObjPool[ObjIdx].SyncObj);
-#else
-        	_SlReturnVal_t retVal;
-            retVal = _SlDrvSyncObjWaitTimeout(&g_pCB->ObjPool[ObjIdx].SyncObj,
-                                              INIT_COMPLETE_TIMEOUT,
-                                              SL_DRIVER_API_DEVICE_SL_START);
-            if (retVal)
-            {
-                return SL_API_ABORTED;
-            }
-#endif            
+#define SL_INC_STD_BSD_API_NAMING
 
 
-            /* release Pool Object */
-            _SlDrvReleasePoolObj(g_pCB->FunctionParams.AsyncExt.ActionIndex);
-	         return _sl_GetStartResponseConvert(AsyncRsp.Status);
-        }
-        else
-        {
-            return SL_RET_CODE_OK;
-        }
-    }
-    return SL_BAD_INTERFACE;
-}
-#endif
-
-/***************************************************************************
-_sl_HandleAsync_InitComplete - handles init complete signalling to 
-a waiting object
-****************************************************************************/
-_SlReturnVal_t _sl_HandleAsync_InitComplete(void *pVoidBuf)
-{
-    InitComplete_t     *pMsgArgs   = (InitComplete_t *)_SL_RESP_ARGS_START(pVoidBuf);
-
-    SL_DRV_PROTECTION_OBJ_LOCK_FOREVER();
+/*!
+    \brief      Defines whether to include extended API in SimpleLink driver
+                or not
     
-    if(g_pCB->pInitCallback)
-    {
-        g_pCB->pInitCallback(_sl_GetStartResponseConvert(pMsgArgs->Status));
-    }
-    else
-    {
-        sl_Memcpy(g_pCB->ObjPool[g_pCB->FunctionParams.AsyncExt.ActionIndex].pRespArgs, pMsgArgs, sizeof(InitComplete_t));
-        SL_DRV_SYNC_OBJ_SIGNAL(&g_pCB->ObjPool[g_pCB->FunctionParams.AsyncExt.ActionIndex].SyncObj);
-    }
+                When defined, the SimpleLink driver will include also all 
+                extended API of the included packages
+
+    \sa         ext_api
+
+    \note       belongs to \ref porting_sec
+
+    \warning    
+*/
+#define SL_INC_EXT_API
+
+/*!
+    \brief      Defines whether to include WLAN package in SimpleLink driver 
+                or not
     
-    SL_DRV_PROTECTION_OBJ_UNLOCK();
-   
-    if(g_pCB->pInitCallback)
-    {
-        _SlDrvReleasePoolObj(g_pCB->FunctionParams.AsyncExt.ActionIndex);
-    }
+                When defined, the SimpleLink driver will include also 
+                the WLAN package
 
+    \sa         
 
-	return SL_RET_CODE_OK;
-}
+    \note       belongs to \ref porting_sec
 
-/***************************************************************************
-_sl_HandleAsync_Stop - handles stop signalling to 
-a waiting object
-****************************************************************************/
-void _sl_HandleAsync_Stop(void *pVoidBuf)
-{
-    _BasicResponse_t     *pMsgArgs   = (_BasicResponse_t *)_SL_RESP_ARGS_START(pVoidBuf);
+    \warning        
+*/
+#define SL_INC_WLAN_PKG
 
-    VERIFY_SOCKET_CB(NULL != g_pCB->StopCB.pAsyncRsp);
-
-    SL_DRV_PROTECTION_OBJ_LOCK_FOREVER();
-
-    sl_Memcpy(g_pCB->ObjPool[g_pCB->FunctionParams.AsyncExt.ActionIndex].pRespArgs, pMsgArgs, sizeof(_BasicResponse_t));
-
-    SL_DRV_SYNC_OBJ_SIGNAL(&g_pCB->ObjPool[g_pCB->FunctionParams.AsyncExt.ActionIndex].SyncObj);
-    SL_DRV_PROTECTION_OBJ_UNLOCK();
+/*!
+    \brief      Defines whether to include SOCKET package in SimpleLink 
+                driver or not
     
-    return;
+                When defined, the SimpleLink driver will include also 
+                the SOCKET package
+
+    \sa         
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_SOCKET_PKG
+
+/*!
+    \brief      Defines whether to include NET_APP package in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also the 
+                NET_APP package
+
+    \sa         
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_NET_APP_PKG
+
+/*!
+    \brief      Defines whether to include NET_CFG package in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also 
+                the NET_CFG package
+
+    \sa         
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_NET_CFG_PKG
+
+/*!
+    \brief      Defines whether to include NVMEM package in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also the 
+                NVMEM package
+
+    \sa         
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/ 
+#define SL_INC_NVMEM_PKG
+
+/*!
+    \brief      Defines whether to include socket server side APIs 
+                in SimpleLink driver or not
+    
+                When defined, the SimpleLink driver will include also socket 
+                server side APIs
+
+    \sa         server_side
+
+    \note       
+
+    \warning        
+*/
+#define SL_INC_SOCK_SERVER_SIDE_API
+
+/*!
+    \brief      Defines whether to include socket client side APIs in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also socket 
+                client side APIs
+
+    \sa         client_side
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_SOCK_CLIENT_SIDE_API
+
+/*!
+    \brief      Defines whether to include socket receive APIs in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also socket 
+                receive side APIs
+
+    \sa         recv_api
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_SOCK_RECV_API
+
+/*!
+    \brief      Defines whether to include socket send APIs in SimpleLink 
+                driver or not
+    
+                When defined, the SimpleLink driver will include also socket 
+                send side APIs
+
+    \sa         send_api
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define SL_INC_SOCK_SEND_API
+
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+
+/*!
+ ******************************************************************************
+
+    \defgroup   porting_enable_device       Device Enable/Disable IO
+
+    The enable/disable API provide mechanism to enable/disable the network processor
+
+
+    PORTING ACTION:
+        - None
+    @{
+
+ ******************************************************************************
+ */
+/*!
+    \brief		Preamble to the enabling the Network Processor.
+                        Placeholder to implement any pre-process operations
+                        before enabling networking operations.
+
+    \sa			sl_DeviceEnable
+
+    \note       belongs to \ref ported_sec
+
+*/
+#define sl_DeviceEnablePreamble()		
+
+/*!
+    \brief		Enable the Network Processor
+
+    \sa			sl_DeviceDisable
+
+    \note       belongs to \ref porting_sec
+
+*/
+#define sl_DeviceEnable()          
+
+/*!
+    \brief		Disable the Network Processor
+
+    \sa			sl_DeviceEnable
+
+    \note       belongs to \ref porting_sec
+*/
+#define sl_DeviceDisable() 
+
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+/*!
+ ******************************************************************************
+
+    \defgroup   porting_interface         Hardware Transport Interface
+
+    The simple link device can work with different transport interfaces
+    (namely,SPI or UART). Texas Instruments provides single driver
+    that can work with all these types. This section binds the
+    physical transport interface with the SimpleLink driver
+
+
+    \note       Correct and efficient implementation of this driver is critical
+                for the performances of the SimpleLink device on this platform.
+
+
+    PORTING ACTION:
+        - None
+
+    @{
+
+ ******************************************************************************
+ */
+
+#define _SlFd_t		
+
+/*!
+    \brief      Opens an interface communication port to be used for communicating
+                with a SimpleLink device
+	
+	            Given an interface name and option flags, this function opens 
+                the communication port and creates a file descriptor. 
+                This file descriptor is used afterwards to read and write 
+                data from and to this specific communication channel.
+	            The speed, clock polarity, clock phase, chip select and all other 
+                specific attributes of the channel are all should be set to hardcoded
+                in this function.
+	
+	\param	 	ifName  -   points to the interface name/path. The interface name is an 
+                            optional attributes that the simple link driver receives
+                            on opening the driver (sl_Start). 
+                            In systems that the spi channel is not implemented as 
+                            part of the OS device drivers, this parameter could be NULL.
+
+	\param      flags   -   optional flags parameters for future use
+
+	\return     upon successful completion, the function shall open the channel 
+                and return a non-negative integer representing the file descriptor.
+                Otherwise, -1 shall be returned 
+					
+    \sa         sl_IfClose , sl_IfRead , sl_IfWrite
+
+	\note       The prototype of the function is as follow:
+                    Fd_t xxx_IfOpen(char* pIfName , unsigned long flags);
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_IfOpen  
+
+/*!
+    \brief      Closes an opened interface communication port
+	
+	\param	 	fd  -   file descriptor of opened communication channel
+
+	\return		upon successful completion, the function shall return 0. 
+			    Otherwise, -1 shall be returned 
+					
+    \sa         sl_IfOpen , sl_IfRead , sl_IfWrite
+
+	\note       The prototype of the function is as follow:
+                    int xxx_IfClose(Fd_t Fd);
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_IfClose 
+
+/*!
+    \brief      Attempts to read up to len bytes from an opened communication channel 
+                into a buffer starting at pBuff.
+	
+	\param	 	fd      -   file descriptor of an opened communication channel
+	
+	\param		pBuff   -   pointer to the first location of a buffer that contains enough 
+                            space for all expected data
+
+	\param      len     -   number of bytes to read from the communication channel
+
+	\return     upon successful completion, the function shall return the number of read bytes. 
+                Otherwise, 0 shall be returned 
+					
+    \sa         sl_IfClose , sl_IfOpen , sl_IfWrite
+
+
+	\note       The prototype of the function is as follow:
+                    int xxx_IfRead(Fd_t Fd , char* pBuff , int Len);
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_IfRead 
+
+/*!
+    \brief attempts to write up to len bytes to the SPI channel
+	
+	\param	 	fd      -   file descriptor of an opened communication channel
+	
+	\param		pBuff   -   pointer to the first location of a buffer that contains 
+                            the data to send over the communication channel
+
+	\param      len     -   number of bytes to write to the communication channel
+
+	\return     upon successful completion, the function shall return the number of sent bytes. 
+				otherwise, 0 shall be returned 
+					
+    \sa         sl_IfClose , sl_IfOpen , sl_IfRead
+
+	\note       This function could be implemented as zero copy and return only upon successful completion
+                of writing the whole buffer, but in cases that memory allocation is not too tight, the 
+                function could copy the data to internal buffer, return back and complete the write in 
+                parallel to other activities as long as the other SPI activities would be blocked until 
+                the entire buffer write would be completed 
+
+               The prototype of the function is as follow:
+                    int xxx_IfWrite(Fd_t Fd , char* pBuff , int Len);
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_IfWrite  
+
+/*!
+    \brief 		register an interrupt handler routine for the host IRQ
+
+	\param	 	InterruptHdl	-	pointer to interrupt handler routine
+
+	\param 		pValue			-	pointer to a memory structure that is passed
+									to the interrupt handler.
+
+	\return		upon successful registration, the function shall return 0.
+				Otherwise, -1 shall be returned
+
+    \sa
+
+	\note		If there is already registered interrupt handler, the function
+				should overwrite the old handler with the new one
+
+	\note       If the handler is a null pointer, the function should un-register the
+	            interrupt handler, and the interrupts can be disabled.
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_IfRegIntHdlr(InterruptHdl , pValue)          SlStudio_RegisterInterruptHandler(InterruptHdl , pValue)
+/*!
+    \brief 		Masks the Host IRQ
+
+    \sa		sl_IfUnMaskIntHdlr
+
+
+
+    \note       belongs to \ref porting_sec
+
+    \warning
+*/
+
+#define sl_IfMaskIntHdlr()								
+
+/*!
+    \brief 		Unmasks the Host IRQ
+
+    \sa		sl_IfMaskIntHdlr
+
+
+
+    \note       belongs to \ref porting_sec
+
+    \warning
+*/
+
+#define sl_IfUnMaskIntHdlr()
+    
+/*!
+    \brief 		Write Handers for statistics debug on write 
+
+	\param	 	interface handler	-	pointer to interrupt handler routine
+
+
+	\return		no return value
+
+    \sa
+
+	\note		An optional hooks for monitoring before and after write info
+
+    \note       belongs to \ref porting_sec
+
+    \warning        
+*/
+/*
+#define SL_START_WRITE_STAT
+*/
+
+#ifdef SL_START_WRITE_STAT
+#define sl_IfStartWriteSequence                      
+#define sl_IfEndWriteSequence                        
+#endif
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+/*!
+ ******************************************************************************
+
+    \defgroup   porting_mem_mgm             Memory Management
+
+    This section declare in which memory management model the SimpleLink driver
+    will run:
+        -# Static
+        -# Dynamic
+
+    This section IS NOT REQUIRED in case Static model is selected.
+
+    The default memory model is Static
+
+    PORTING ACTION:
+        - If dynamic model is selected, define the alloc and free functions.
+
+    @{
+
+ *****************************************************************************
+ */
+
+/*!
+    \brief      Defines whether the SimpleLink driver is working in dynamic
+                memory model or not
+
+                When defined, the SimpleLink driver use dynamic allocations
+                if dynamic allocation is selected malloc and free functions
+                must be retrieved
+
+    \sa
+
+    \note       belongs to \ref porting_sec
+
+    \warning
+*/
+/*
+#define SL_MEMORY_MGMT_DYNAMIC
+*/
+
+#ifdef SL_MEMORY_MGMT_DYNAMIC
+
+/*!
+    \brief
+
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_Malloc(Size)                                 malloc(Size)
+
+/*!
+    \brief
+
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning        
+*/
+#define sl_Free(pMem)                                   free(pMem)
+
+#endif
+
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+/*!
+ ******************************************************************************
+
+    \defgroup   porting_os          Operating System (OS)
+
+    The simple link driver can run on multi-threaded environment as well
+    as non-os environment (main loop)
+
+    This section IS NOT REQUIRED in case you are working on non-os environment.
+
+    If you choose to work in multi-threaded environment under any operating system
+    you will have to provide some basic adaptation routines to allow the driver
+    to protect access to resources from different threads (locking object) and
+    to allow synchronization between threads (sync objects).
+
+    PORTING ACTION:
+        -# Uncomment SL_PLATFORM_MULTI_THREADED define
+        -# Bind locking object routines
+        -# Bind synchronization object routines
+        -# Optional - Bind spawn thread routine
+
+    @{
+
+ ******************************************************************************
+ */
+
+
+#define SL_PLATFORM_MULTI_THREADED
+
+#ifdef SL_PLATFORM_MULTI_THREADED
+
+/*!
+    \brief
+    \sa
+    \note           belongs to \ref porting_sec
+    \warning
+*/
+#define SL_OS_RET_CODE_OK                       ((int)OSI_OK)
+
+/*!
+    \brief
+    \sa
+    \note           belongs to \ref porting_sec
+    \warning
+*/
+#define SL_OS_WAIT_FOREVER                      ((OsiTime_t)OSI_WAIT_FOREVER)
+
+/*!
+    \brief
+    \sa
+    \note           belongs to \ref porting_sec
+    \warning
+*/
+#define SL_OS_NO_WAIT	                        ((OsiTime_t)OSI_NO_WAIT)
+
+/*!
+	\brief type definition for a time value
+
+	\note	On each porting or platform the type could be whatever is needed - integer, pointer to structure etc.
+
+    \note       belongs to \ref porting_sec
+*/
+#define _SlTime_t				
+
+/*!
+	\brief 	type definition for a sync object container
+
+	Sync object is object used to synchronize between two threads or thread and interrupt handler.
+	One thread is waiting on the object and the other thread send a signal, which then
+	release the waiting thread.
+	The signal must be able to be sent from interrupt context.
+	This object is generally implemented by binary semaphore or events.
+
+	\note	On each porting or platform the type could be whatever is needed - integer, structure etc.
+
+    \note       belongs to \ref porting_sec
+*/
+#define _SlSyncObj_t			
+
+    
+/*!
+	\brief 	This function creates a sync object
+
+	The sync object is used for synchronization between different thread or ISR and
+	a thread.
+
+	\param	pSyncObj	-	pointer to the sync object control block
+
+	\return upon successful creation the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_SyncObjCreate(pSyncObj,pName)           
+
+    
+/*!
+	\brief 	This function deletes a sync object
+
+	\param	pSyncObj	-	pointer to the sync object control block
+
+	\return upon successful deletion the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_SyncObjDelete(pSyncObj)                  
+
+    
+/*!
+	\brief 		This function generates a sync signal for the object.
+
+	All suspended threads waiting on this sync object are resumed
+
+	\param		pSyncObj	-	pointer to the sync object control block
+
+	\return 	upon successful signalling the function should return 0
+				Otherwise, a negative value indicating the error code shall be returned
+	\note		the function could be called from ISR context
+	\warning
+*/
+#define sl_SyncObjSignal(pSyncObj)                
+
+/*!
+	\brief 		This function generates a sync signal for the object from Interrupt
+
+	This is for RTOS that should signal from IRQ using a dedicated API
+
+	\param		pSyncObj	-	pointer to the sync object control block
+
+	\return 	upon successful signalling the function should return 0
+				Otherwise, a negative value indicating the error code shall be returned
+	\note		the function could be called from ISR context
+	\warning
+*/
+#define sl_SyncObjSignalFromIRQ(pSyncObj)           
+/*!
+	\brief 	This function waits for a sync signal of the specific sync object
+
+	\param	pSyncObj	-	pointer to the sync object control block
+	\param	Timeout		-	numeric value specifies the maximum number of mSec to
+							stay suspended while waiting for the sync signal
+							Currently, the simple link driver uses only two values:
+								- OSI_WAIT_FOREVER
+								- OSI_NO_WAIT
+
+	\return upon successful reception of the signal within the timeout window return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_SyncObjWait(pSyncObj,Timeout)             
+    
+/*!
+	\brief 	type definition for a locking object container
+
+	Locking object are used to protect a resource from mutual accesses of two or more threads.
+	The locking object should support reentrant locks by a signal thread.
+	This object is generally implemented by mutex semaphore
+
+	\note	On each porting or platform the type could be whatever is needed - integer, structure etc.
+    \note       belongs to \ref porting_sec
+*/
+#define _SlLockObj_t 			
+
+/*!
+	\brief 	This function creates a locking object.
+
+	The locking object is used for protecting a shared resources between different
+	threads.
+
+	\param	pLockObj	-	pointer to the locking object control block
+
+	\return upon successful creation the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_LockObjCreate(pLockObj,pName)            
+    
+/*!
+	\brief 	This function deletes a locking object.
+
+	\param	pLockObj	-	pointer to the locking object control block
+
+	\return upon successful deletion the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_LockObjDelete(pLockObj)                 
+    
+/*!
+	\brief 	This function locks a locking object.
+
+	All other threads that call this function before this thread calls
+	the osi_LockObjUnlock would be suspended
+
+	\param	pLockObj	-	pointer to the locking object control block
+	\param	Timeout		-	numeric value specifies the maximum number of mSec to
+							stay suspended while waiting for the locking object
+							Currently, the simple link driver uses only two values:
+								- OSI_WAIT_FOREVER
+								- OSI_NO_WAIT
+
+
+	\return upon successful reception of the locking object the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_LockObjLock(pLockObj,Timeout)            
+    
+/*!
+	\brief 	This function unlock a locking object.
+
+	\param	pLockObj	-	pointer to the locking object control block
+
+	\return upon successful unlocking the function should return 0
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define sl_LockObjUnlock(pLockObj)                 
+
+#endif
+/*!
+	\brief 	This function call the pEntry callback from a different context
+
+	\param	pEntry		-	pointer to the entry callback function
+
+	\param	pValue		- 	pointer to any type of memory structure that would be
+							passed to pEntry callback from the execution thread.
+
+	\param	flags		- 	execution flags - reserved for future usage
+
+	\return upon successful registration of the spawn the function should return 0
+			(the function is not blocked till the end of the execution of the function
+			and could be returned before the execution is actually completed)
+			Otherwise, a negative value indicating the error code shall be returned
+    \note       belongs to \ref porting_sec
+	\warning
+*/
+#define SL_PLATFORM_EXTERNAL_SPAWN
+
+#ifdef SL_PLATFORM_EXTERNAL_SPAWN
+#define sl_Spawn(pEntry,pValue,flags)               
+#endif
+
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+
+/*!
+ ******************************************************************************
+
+    \defgroup       porting_events      Event Handlers
+
+    This section includes the asynchronous event handlers routines
+
+    PORTING ACTION:
+        -Uncomment the required handler and define your routine as the value
+        of this handler
+
+    @{
+
+ ******************************************************************************
+ */
+
+/*!
+    \brief
+
+    \sa
+
+    \note       belongs to \ref porting_sec
+
+    \warning
+*/
+
+#define sl_GeneralEvtHdlr 
+
+
+/*!
+    \brief          An event handler for WLAN connection or disconnection indication
+                    This event handles async WLAN events. 
+                    Possible events are:
+                    SL_WLAN_CONNECT_EVENT - indicates WLAN is connected 
+                    SL_WLAN_DISCONNECT_EVENT - indicates WLAN is disconnected
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning
+*/
+#define sl_WlanEvtHdlr                              
+
+/*!
+    \brief          An event handler for IP address asynchronous event. Usually accepted after new WLAN connection.
+                    This event handles networking events.
+                    Possible events are:
+                    SL_NETAPP_IPV4_ACQUIRED - IP address was acquired (DHCP or Static)
+
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning
+*/
+
+#define sl_NetAppEvtHdlr   
+
+/*!
+    \brief          A callback for HTTP server events.
+                    Possible events are:
+                    SL_NETAPP_HTTPGETTOKENVALUE - NWP requests to get the value of a specific token
+					SL_NETAPP_HTTPPOSTTOKENVALUE - NWP post to the host a new value for a specific token
+
+	\param			pServerEvent - Contains the relevant event information (SL_NETAPP_HTTPGETTOKENVALUE or SL_NETAPP_HTTPPOSTTOKENVALUE)
+
+	\param			pServerResponse - Should be filled by the user with the relevant response information (i.e SL_NETAPP_HTTPSETTOKENVALUE as a response to SL_NETAPP_HTTPGETTOKENVALUE event)
+
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning
+*/
+
+#define sl_HttpServerCallback   
+
+/*!
+    \brief
+
+    \sa
+
+    \note           belongs to \ref porting_sec
+
+    \warning
+*/
+#define sl_SockEvtHdlr 
+
+
+
+/*!
+
+ Close the Doxygen group.
+ @}
+
+ */
+
+
+#ifdef  __cplusplus
 }
+#endif /* __cplusplus */
 
-
-/*****************************************************************************
-sl_stop
-******************************************************************************/
-typedef union
-{
-    _DevStopCommand_t  Cmd;
-    _BasicResponse_t   Rsp;    
-}_SlStopMsg_u;
-
-static const _SlCmdCtrl_t _SlStopCmdCtrl =
-{
-    SL_OPCODE_DEVICE_STOP_COMMAND,
-    (_SlArgSize_t)sizeof(_DevStopCommand_t),
-    (_SlArgSize_t)sizeof(_BasicResponse_t)
-};
-
-#if _SL_INCLUDE_FUNC(sl_Stop)
-_i16 sl_Stop(const _u16 timeout)
-{
-    _i16 RetVal=0;
-    _SlStopMsg_u      Msg;
-    _BasicResponse_t  AsyncRsp;
-    _u8 ObjIdx = MAX_CONCURRENT_ACTIONS;
-
-    /* If we are in the middle of assert handling then ignore stopping
-     * the device with timeout and force immediate shutdown as we would like
-     * to avoid any additional commands to the NWP */
-    if( (timeout != 0) 
-#ifndef SL_TINY_EXT  
-       && ((_u8)FALSE == g_bDeviceRestartIsRequired)
-#endif 
-    )      
-    {
-    	/* let the device make the shutdown using the defined timeout */
-        Msg.Cmd.Timeout = timeout;
-
-        ObjIdx = _SlDrvProtectAsyncRespSetting((_u8 *)&AsyncRsp, START_STOP_ID, SL_MAX_SOCKETS);
-        if (MAX_CONCURRENT_ACTIONS == ObjIdx)
-        {
-          return SL_POOL_IS_EMPTY;
-        }
-
-        VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlStopCmdCtrl, &Msg, NULL));
-
-        if(SL_OS_RET_CODE_OK == (_i16)Msg.Rsp.status)
-        {
-
-#ifdef SL_TINY_EXT        
-         _SlDrvSyncObjWaitForever(&g_pCB->ObjPool[ObjIdx].SyncObj);
-                /* Wait for sync object to be signaled */
-#else                
-         SL_DRV_SYNC_OBJ_WAIT_TIMEOUT(&g_pCB->ObjPool[ObjIdx].SyncObj,
-                                      STOP_DEVICE_TIMEOUT,
-                                      SL_DRIVER_API_DEVICE_SL_STOP);
-#endif
-
-         Msg.Rsp.status = AsyncRsp.status;
-         RetVal = Msg.Rsp.status;
-        }
-        _SlDrvReleasePoolObj(ObjIdx);
-    }
-
-    sl_IfRegIntHdlr(NULL, NULL);
-    sl_DeviceDisable();
-    RetVal = sl_IfClose(g_pCB->FD);
-
-    (void)_SlDrvDriverCBDeinit();
-
-#ifndef SL_TINY_EXT
-    /* Clear the restart device flag  */
-    g_bDeviceRestartIsRequired = FALSE;
-#endif
-
-    return RetVal;
-}
-#endif
-
-
-/*****************************************************************************
-sl_EventMaskSet
-*****************************************************************************/
-typedef union
-{
-    _DevMaskEventSetCommand_t	    Cmd;
-    _BasicResponse_t	            Rsp;
-}_SlEventMaskSetMsg_u;
-
-
-
-
-#if _SL_INCLUDE_FUNC(sl_EventMaskSet)
-
-static const _SlCmdCtrl_t _SlEventMaskSetCmdCtrl =
-{
-    SL_OPCODE_DEVICE_EVENTMASKSET,
-    (_SlArgSize_t)sizeof(_DevMaskEventSetCommand_t),
-    (_SlArgSize_t)sizeof(_BasicResponse_t)
-};
-
-
-_i16 sl_EventMaskSet(const _u8 EventClass ,const _u32 Mask)
-{
-    _SlEventMaskSetMsg_u Msg;
-
-    /* verify no erorr handling in progress. if in progress than
-    ignore the API execution and return immediately with an error */
-    VERIFY_NO_ERROR_HANDLING_IN_PROGRESS();
-
-    Msg.Cmd.group = EventClass;
-    Msg.Cmd.mask = Mask;
-
-    VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlEventMaskSetCmdCtrl, &Msg, NULL));
-
-    return (_i16)Msg.Rsp.status;
-}
-#endif
-
-/******************************************************************************
-sl_EventMaskGet
-******************************************************************************/
-typedef union
-{
-    _DevMaskEventGetCommand_t	    Cmd;
-    _DevMaskEventGetResponse_t      Rsp;
-}_SlEventMaskGetMsg_u;
-
-
-
-#if _SL_INCLUDE_FUNC(sl_EventMaskGet)
-
-static const _SlCmdCtrl_t _SlEventMaskGetCmdCtrl =
-{
-    SL_OPCODE_DEVICE_EVENTMASKGET,
-    (_SlArgSize_t)sizeof(_DevMaskEventGetCommand_t),
-    (_SlArgSize_t)sizeof(_DevMaskEventGetResponse_t)
-};
-
-
-_i16 sl_EventMaskGet(const _u8 EventClass,_u32 *pMask)
-{
-    _SlEventMaskGetMsg_u Msg;
-
-    /* verify no erorr handling in progress. if in progress than
-    ignore the API execution and return immediately with an error */
-    VERIFY_NO_ERROR_HANDLING_IN_PROGRESS();
-    Msg.Cmd.group = EventClass;
-
-    VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlEventMaskGetCmdCtrl, &Msg, NULL));
-
-    *pMask = Msg.Rsp.mask;
-    return SL_RET_CODE_OK;
-}
-#endif
-
-
-
-/******************************************************************************
-sl_DevGet
-******************************************************************************/
-
-typedef union
-{
-    _DeviceSetGet_t	    Cmd;
-    _DeviceSetGet_t	    Rsp;
-}_SlDeviceMsgGet_u;
-
-
-
-#if _SL_INCLUDE_FUNC(sl_DevGet)
-
-static const _SlCmdCtrl_t _SlDeviceGetCmdCtrl =
-{
-    SL_OPCODE_DEVICE_DEVICEGET,
-    (_SlArgSize_t)sizeof(_DeviceSetGet_t),
-    (_SlArgSize_t)sizeof(_DeviceSetGet_t)
-};
-
-_i32 sl_DevGet(const _u8 DeviceGetId,_u8 *pOption,_u8 *pConfigLen, _u8 *pValues)
-{
-    _SlDeviceMsgGet_u         Msg;
-    _SlCmdExt_t               CmdExt;
-    /* verify no erorr handling in progress. if in progress than
-    ignore the API execution and return immediately with an error */
-    VERIFY_NO_ERROR_HANDLING_IN_PROGRESS();
-
-    if (*pConfigLen == 0)
-    {
-        return SL_EZEROLEN;
-    }
-
-    if( pOption )
-    {
-
-        _SlDrvResetCmdExt(&CmdExt);
-        CmdExt.RxPayloadLen = (_i16)*pConfigLen;
-        CmdExt.pRxPayload = (_u8 *)pValues;
-
-        Msg.Cmd.DeviceSetId = DeviceGetId;
-
-        Msg.Cmd.Option   = (_u16)*pOption;
-
-        VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlDeviceGetCmdCtrl, &Msg, &CmdExt));
-
-        if( pOption )
-        {
-            *pOption = (_u8)Msg.Rsp.Option;
-        }
-
-        if (CmdExt.RxPayloadLen < CmdExt.ActualRxPayloadLen) 
-        {
-            *pConfigLen = (_u8)CmdExt.RxPayloadLen;
-            return SL_ESMALLBUF;
-        }
-        else
-        {
-            *pConfigLen = (_u8)CmdExt.ActualRxPayloadLen;
-        }
-
-        return (_i16)Msg.Rsp.Status;
-    }
-    else
-    {
-        return -1;
-    }
-}
-#endif
-
-/******************************************************************************
-sl_DevSet
-******************************************************************************/
-typedef union
-{
-    _DeviceSetGet_t    Cmd;
-    _BasicResponse_t   Rsp;
-}_SlDeviceMsgSet_u;
-
-
-
-#if _SL_INCLUDE_FUNC(sl_DevSet)
-
-static const _SlCmdCtrl_t _SlDeviceSetCmdCtrl =
-{
-    SL_OPCODE_DEVICE_DEVICESET,
-    (_SlArgSize_t)sizeof(_DeviceSetGet_t),
-    (_SlArgSize_t)sizeof(_BasicResponse_t)
-};
-
-_i32 sl_DevSet(const _u8 DeviceSetId ,const _u8 Option,const _u8 ConfigLen,const _u8 *pValues)
-{
-    _SlDeviceMsgSet_u         Msg;
-    _SlCmdExt_t               CmdExt;
-
-    /* verify no erorr handling in progress. if in progress than
-    ignore the API execution and return immediately with an error */
-    VERIFY_NO_ERROR_HANDLING_IN_PROGRESS();
-
-    _SlDrvResetCmdExt(&CmdExt);
-
-    CmdExt.TxPayloadLen = (ConfigLen+3) & (~3);
-    CmdExt.pTxPayload = (_u8 *)pValues;
-
-    Msg.Cmd.DeviceSetId    = DeviceSetId;
-    Msg.Cmd.ConfigLen   = ConfigLen;
-    Msg.Cmd.Option   = Option;
-
-    VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlDeviceSetCmdCtrl, &Msg, &CmdExt));
-
-    return (_i16)Msg.Rsp.status;
-}
-#endif
-
-
-/******************************************************************************
-_SlDrvDeviceEventHandler - handles internally device async events
-******************************************************************************/
-_SlReturnVal_t _SlDrvDeviceEventHandler(void* pEventInfo)
-{
-    DeviceEventInfo_t*    pInfo = (DeviceEventInfo_t*)pEventInfo;
-    _SlResponseHeader_t*  pHdr  = (_SlResponseHeader_t *)pInfo->pAsyncMsgBuff;
-    _BasicResponse_t     *pMsgArgs   = (_BasicResponse_t *)_SL_RESP_ARGS_START(pHdr);
-
-    switch(pHdr->GenHeader.Opcode)
-    {
-    case SL_OPCODE_DEVICE_INITCOMPLETE:
-        _sl_HandleAsync_InitComplete(pHdr);
-        break;
-    case SL_OPCODE_DEVICE_STOP_ASYNC_RESPONSE:
-        _sl_HandleAsync_Stop(pHdr);
-        break;
-
-
-	case SL_OPCODE_DEVICE_ABORT:
-        {
-        /* release global lock of cmd context */
-        if (pInfo->bInCmdContext == TRUE)
-        {
-            SL_DRV_LOCK_GLOBAL_UNLOCK();	
-        }
-
-#ifndef SL_TINY_EXT
-        _SlDriverHandleError(SL_DEVICE_ABORT_ERROR_EVENT,
-                             *((_u32*)pMsgArgs),       /* Abort type */
-                             *((_u32*)pMsgArgs + 1));  /* Abort data */
-#endif        
-	}
-        break;
-
-    case  SL_OPCODE_DEVICE_ASYNC_GENERAL_ERROR:
-        {
-            SlDeviceEvent_t      devHandler;
-            devHandler.Event = SL_DEVICE_GENERAL_ERROR_EVENT;
-            devHandler.EventData.deviceEvent.status = pMsgArgs->status & 0xFF;
-            devHandler.EventData.deviceEvent.sender = (SlErrorSender_e)((pMsgArgs->status >> 8) & 0xFF);
-            _SlDrvHandleGeneralEvents(&devHandler);
-        }
-
-        break;
-    default:
-        SL_ERROR_TRACE2(MSG_306, "ASSERT: _SlDrvDeviceEventHandler : invalid opcode = 0x%x = %1", pHdr->GenHeader.Opcode, pHdr->GenHeader.Opcode);
-    }
-
-    return SL_OS_RET_CODE_OK;
-}
-
-
-/******************************************************************************
-sl_UartSetMode 
-******************************************************************************/
-#ifdef SL_IF_TYPE_UART
-typedef union
-{
-    _DevUartSetModeCommand_t	  Cmd;
-    _DevUartSetModeResponse_t     Rsp;
-}_SlUartSetModeMsg_u;
-
-
-#if _SL_INCLUDE_FUNC(sl_UartSetMode)
-
-
-const _SlCmdCtrl_t _SlUartSetModeCmdCtrl =
-{
-    SL_OPCODE_DEVICE_SETUARTMODECOMMAND,
-    (_SlArgSize_t)sizeof(_DevUartSetModeCommand_t),
-    (_SlArgSize_t)sizeof(_DevUartSetModeResponse_t)
-};
-
-_i16 sl_UartSetMode(const SlUartIfParams_t* pUartParams)
-{
-    _SlUartSetModeMsg_u Msg;
-    _u32 magicCode = (_u32)0xFFFFFFFF;
-
-    Msg.Cmd.BaudRate = pUartParams->BaudRate;
-    Msg.Cmd.FlowControlEnable = pUartParams->FlowControlEnable;
-
-
-    VERIFY_RET_OK(_SlDrvCmdOp((_SlCmdCtrl_t *)&_SlUartSetModeCmdCtrl, &Msg, NULL));
-
-    /* cmd response OK, we can continue with the handshake */
-    if (SL_RET_CODE_OK == Msg.Rsp.status)
-    {
-        sl_IfMaskIntHdlr();
-
-        /* Close the comm port */
-        sl_IfClose(g_pCB->FD);
-
-        /* Re-open the comm port */
-        sl_IfOpen((void * )pUartParams, UART_IF_OPEN_FLAG_RE_OPEN);
-
-        sl_IfUnMaskIntHdlr();
-
-        /* send the magic code and wait for the response */
-        sl_IfWrite(g_pCB->FD, (_u8* )&magicCode, 4);
-
-        magicCode = UART_SET_MODE_MAGIC_CODE;
-        sl_IfWrite(g_pCB->FD, (_u8* )&magicCode, 4);
-
-        /* clear magic code */
-        magicCode = 0;
-
-        /* wait (blocking) till the magic code to be returned from device */
-        sl_IfRead(g_pCB->FD, (_u8* )&magicCode, 4);
-
-        /* check for the received magic code matching */
-        if (UART_SET_MODE_MAGIC_CODE != magicCode)
-        {
-            _SL_ASSERT(0);
-        }
-    }
-
-    return (_i16)Msg.Rsp.status;
-}
-#endif
-#endif
-
+#endif /* __USER_H__ */
 

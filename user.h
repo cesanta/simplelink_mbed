@@ -1,3 +1,4 @@
+/* clang-format off */
 /*
  * user.h - CC31xx/CC32xx Host Driver Implementation
  *
@@ -75,6 +76,9 @@ extern "C" {
  ******************************************************************************
  */
 
+#include <string.h>
+#include "cs_simplelink_mbed.h"
+ 
 /*!
  ******************************************************************************
 
@@ -175,7 +179,7 @@ extern "C" {
     \warning        
 */
 
-#define SL_INC_STD_BSD_API_NAMING
+/* #define SL_INC_STD_BSD_API_NAMING */
 
 
 /*!
@@ -360,7 +364,7 @@ extern "C" {
     \note       belongs to \ref ported_sec
 
 */
-#define sl_DeviceEnablePreamble()		
+#define sl_DeviceEnablePreamble()	mbed_sl_DeviceEnablePreamble()
 
 /*!
     \brief		Enable the Network Processor
@@ -370,7 +374,7 @@ extern "C" {
     \note       belongs to \ref porting_sec
 
 */
-#define sl_DeviceEnable()          
+#define sl_DeviceEnable() mbed_sl_DeviceEnable()
 
 /*!
     \brief		Disable the Network Processor
@@ -379,7 +383,7 @@ extern "C" {
 
     \note       belongs to \ref porting_sec
 */
-#define sl_DeviceDisable() 
+#define sl_DeviceDisable() mbed_sl_DeviceDisable()
 
 /*!
 
@@ -411,7 +415,7 @@ extern "C" {
  ******************************************************************************
  */
 
-#define _SlFd_t		
+#define _SlFd_t	cs_sl_fd_t
 
 /*!
     \brief      Opens an interface communication port to be used for communicating
@@ -446,7 +450,7 @@ extern "C" {
 
     \warning        
 */
-#define sl_IfOpen  
+#define sl_IfOpen mbed_sl_IfOpen
 
 /*!
     \brief      Closes an opened interface communication port
@@ -465,7 +469,7 @@ extern "C" {
 
     \warning        
 */
-#define sl_IfClose 
+#define sl_IfClose mbed_sl_IfClose
 
 /*!
     \brief      Attempts to read up to len bytes from an opened communication channel 
@@ -491,7 +495,7 @@ extern "C" {
 
     \warning        
 */
-#define sl_IfRead 
+#define sl_IfRead mbed_sl_IfRead
 
 /*!
     \brief attempts to write up to len bytes to the SPI channel
@@ -521,7 +525,7 @@ extern "C" {
 
     \warning        
 */
-#define sl_IfWrite  
+#define sl_IfWrite mbed_sl_IfWrite
 
 /*!
     \brief 		register an interrupt handler routine for the host IRQ
@@ -546,7 +550,7 @@ extern "C" {
 
     \warning        
 */
-#define sl_IfRegIntHdlr(InterruptHdl , pValue)          SlStudio_RegisterInterruptHandler(InterruptHdl , pValue)
+#define sl_IfRegIntHdlr mbed_sl_IfRegIntHdlr
 /*!
     \brief 		Masks the Host IRQ
 
@@ -559,7 +563,7 @@ extern "C" {
     \warning
 */
 
-#define sl_IfMaskIntHdlr()								
+#define sl_IfMaskIntHdlr mbed_sl_IfMaskIntHdlr
 
 /*!
     \brief 		Unmasks the Host IRQ
@@ -573,7 +577,7 @@ extern "C" {
     \warning
 */
 
-#define sl_IfUnMaskIntHdlr()
+#define sl_IfUnMaskIntHdlr mbed_sl_IfUnMaskIntHdlr
     
 /*!
     \brief 		Write Handers for statistics debug on write 
@@ -706,7 +710,7 @@ extern "C" {
  */
 
 
-#define SL_PLATFORM_MULTI_THREADED
+/* #define SL_PLATFORM_MULTI_THREADED */
 
 #ifdef SL_PLATFORM_MULTI_THREADED
 
@@ -963,7 +967,7 @@ extern "C" {
     \warning
 */
 
-#define sl_GeneralEvtHdlr 
+#define sl_GeneralEvtHdlr mbed_sl_GeneralEvtHdlr
 
 
 /*!
@@ -978,7 +982,7 @@ extern "C" {
 
     \warning
 */
-#define sl_WlanEvtHdlr                              
+#define sl_WlanEvtHdlr mbed_sl_WlanEvtHdlr
 
 /*!
     \brief          An event handler for IP address asynchronous event. Usually accepted after new WLAN connection.
@@ -993,7 +997,7 @@ extern "C" {
     \warning
 */
 
-#define sl_NetAppEvtHdlr   
+#define sl_NetAppEvtHdlr mbed_sl_NetAppEvtHdlr
 
 /*!
     \brief          A callback for HTTP server events.
@@ -1012,7 +1016,7 @@ extern "C" {
     \warning
 */
 
-#define sl_HttpServerCallback   
+#define sl_HttpServerCallback mbed_sl_HttpServerCallback
 
 /*!
     \brief
@@ -1023,7 +1027,7 @@ extern "C" {
 
     \warning
 */
-#define sl_SockEvtHdlr 
+#define sl_SockEvtHdlr mbed_sl_SockEvtHdlr
 
 
 

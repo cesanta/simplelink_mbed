@@ -1,35 +1,35 @@
 /*
  * nonos.c - CC31xx/CC32xx Host Driver Implementation
  *
- * Copyright (C) 2015 Texas Instruments Incorporated - http://www.ti.com/ 
- * 
- * 
- *  Redistribution and use in source and binary forms, with or without 
- *  modification, are permitted provided that the following conditions 
+ * Copyright (C) 2015 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
  *  are met:
  *
- *    Redistributions of source code must retain the above copyright 
+ *    Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  *
  *    Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materials provided with the   
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the
  *    distribution.
  *
  *    Neither the name of Texas Instruments Incorporated nor the names of
  *    its contributors may be used to endorse or promote products derived
  *    from this software without specific prior written permission.
  *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
 */
@@ -78,9 +78,8 @@ _SlNonOsRetVal_t _SlNonOsSemGet(_SlNonOsSemObj_t* pSyncObj, _SlNonOsSemObj_t Wai
       }
 #endif
 
-#ifdef _SlSyncWaitLoopCallback
-    _SlNonOsTime_t timeOutRequest = Timeout; 
-#endif
+    _SlNonOsTime_t timeOutRequest = Timeout;
+
     while (Timeout>0)
     {
         if (WaitValue == *pSyncObj)
@@ -89,12 +88,17 @@ _SlNonOsRetVal_t _SlNonOsSemGet(_SlNonOsSemObj_t* pSyncObj, _SlNonOsSemObj_t Wai
             break;
         }
 #if (!defined (sl_GetTimestamp)) ||  (defined (SL_TINY_EXT))
-        if (Timeout != NONOS_WAIT_FOREVER)
-        {		
+        /*
+         * We cannot use Timeout var here and in the check below,
+         * because at some point it becomes 255
+         * which is NONOS_WAIT_FOREVER and we have infinite loop
+         */
+        if (timeOutRequest != NONOS_WAIT_FOREVER)
+        {
             Timeout--;
         }
-#else        
-        if ((Timeout != NONOS_WAIT_FOREVER) && (Timeout != NONOS_NO_WAIT))
+#else
+        if ((timeOutRequest != NONOS_WAIT_FOREVER) && (Timeout != timeOutRequest))
         {
             if (_SlDrvIsTimeoutExpired(&TimeoutInfo))
             {
@@ -102,7 +106,7 @@ _SlNonOsRetVal_t _SlNonOsSemGet(_SlNonOsSemObj_t* pSyncObj, _SlNonOsSemObj_t Wai
             }
 
         }
- #endif       
+ #endif
 
         /* If we are in cmd context and waiting for its cmd response
          * do not handle spawn async events as the global lock was already taken */
@@ -139,25 +143,25 @@ _SlNonOsRetVal_t _SlNonOsSpawn(_SlSpawnEntryFunc_t pEntry , void* pValue , _u32 
 	 _i8 i = 0;
 
      (void)flags;
-    
-#ifndef SL_TINY_EXT 	
+
+#ifndef SL_TINY_EXT
 	for (i=0 ; i<NONOS_MAX_SPAWN_ENTRIES ; i++)
-#endif     
+#endif
 	{
 		_SlNonOsSpawnEntry_t* pE = &g__SlNonOsCB.SpawnEntries[i];
-	
+
 		if (pE->IsAllocated == FALSE)
 		{
 			pE->pValue = pValue;
 			pE->pEntry = pEntry;
 			pE->IsAllocated = TRUE;
-#ifndef SL_TINY_EXT 	                        
+#ifndef SL_TINY_EXT
 			break;
-#endif                        
+#endif
 		}
 	}
-        
-        
+
+
         return NONOS_RET_OK;
 }
 
@@ -172,7 +176,7 @@ _SlNonOsRetVal_t _SlNonOsMainLoopTask(void)
 #endif
 	{
 		_SlNonOsSpawnEntry_t* pE = &g__SlNonOsCB.SpawnEntries[i];
-		
+
 
 		if (pE->IsAllocated == TRUE)
 		{
@@ -189,9 +193,9 @@ _SlNonOsRetVal_t _SlNonOsMainLoopTask(void)
             pF(pValue);
 		}
 	}
-        
+
         return NONOS_RET_OK;
 }
 
-    
+
 #endif /*(SL_PLATFORM != SL_PLATFORM_NON_OS)*/

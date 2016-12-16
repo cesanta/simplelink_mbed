@@ -46,7 +46,6 @@ class CC3100 {
 
  private:
   bool connected_;
-  bool inited_;
   uint8_t mac_[6];
   uint32_t ip_;
   uint32_t gw_;
@@ -98,8 +97,8 @@ void CC3100::debugf(const char *fmt, ...) {
 }
 
 void CC3100::start() {
-  inited_ = (sl_Start(NULL, NULL, NULL) == SL_RET_CODE_OK);
-  debugf("SL: sl_Start -> %s\n", inited_? "ok" : "failed");
+  int ret = sl_Start(NULL, NULL, NULL);
+  debugf("SL: sl_Start -> %d\n", ret);
 }
 
 void CC3100::handle_irq() {
@@ -156,6 +155,7 @@ int CC3100::wlan_connect(const char *ssid, const char *pass) {
 
   uint8_t macLen = sizeof(mac_);
   sl_NetCfgGet(SL_MAC_ADDRESS_GET, NULL, &macLen, mac_);
+
   debugf("SL: starting WiFi connect\n");
   return sl_WlanConnect((signed char *) ssid, strlen(ssid), 0, &sec_params,
                         NULL);
@@ -247,10 +247,6 @@ int SimpleLinkInterface::connect(const char *ssid, const char *pass,
 }
 
 int SimpleLinkInterface::connect() {
-  if (!cc->inited_) {
-    return -1;
-  }
-
   cc->wlan_connect(ssid_, pass_);
   return 0;
 }
@@ -271,26 +267,17 @@ static char *ip_to_str(char *buf, size_t len, uint32_t ip) {
 
 const char *SimpleLinkInterface::get_ip_address() {
   static char buf[4 * 4];
-  if (!cc->inited_) {
-    return NULL;
-  }
   return ip_to_str(buf, sizeof(buf), cc->ip_);
 }
 
 const char *SimpleLinkInterface::get_gateway() {
   static char buf[4 * 4];
-  if (!cc->inited_) {
-    return NULL;
-  }
   return ip_to_str(buf, sizeof(buf), cc->gw_);
 }
 
 const char *SimpleLinkInterface::get_mac_address() {
   static char buf[3 * 6];
   uint8_t *m = cc->mac_;
-  if (!cc->inited_) {
-    return NULL;
-  }
   snprintf(buf, sizeof(buf), "%X:%X:%X:%X:%X:%X", m[0], m[1], m[2], m[3], m[4],
            m[5]);
   return buf;

@@ -1029,7 +1029,9 @@ extern "C" {
 */
 #define sl_SockEvtHdlr mbed_sl_SockEvtHdlr
 
-
+#define SL_TIMESTAMP_TICKS_IN_10_MILLISECONDS 10000
+#define SL_TIMESTAMP_MAX_VALUE 0xFFFFFFFF
+#define sl_GetTimestamp mbed_sl_GetTimestamp
 
 /*!
 

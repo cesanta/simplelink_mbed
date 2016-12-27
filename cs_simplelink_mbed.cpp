@@ -24,7 +24,8 @@ class CC3100 {
          PinName cs, int freq, bool debug);
 
   void start();
-  int wlan_connect(const char *ssid, const char *pass);
+  int wlan_connect(const char *ssid, const char *pass,
+                   nsapi_security_t security);
 
   void handle_irq();
 
@@ -74,6 +75,7 @@ CC3100::CC3100(PinName nHIB, PinName irq, PinName mosi, PinName miso,
       cs_(cs),
       nHIB_(nHIB),
       irq_(irq) {
+  memset(mac_, 0, sizeof(mac_));
   spi_.format(SL_SPI_WORD_SIZE, SL_SPI_CLOCK_POLARITY_PHASE);
   spi_.frequency(freq);
 
@@ -98,8 +100,12 @@ void CC3100::debugf(const char *fmt, ...) {
 }
 
 void CC3100::start() {
-  inited_ = (sl_Start(NULL, NULL, NULL) == SL_RET_CODE_OK);
+  inited_ = (sl_Start(NULL, NULL, NULL) == ROLE_STA);
   debugf("SL: sl_Start -> %s\n", inited_? "ok" : "failed");
+  if (inited_) {
+    uint8_t macLen = sizeof(mac_);
+    sl_NetCfgGet(SL_MAC_ADDRESS_GET, NULL, &macLen, mac_);
+  }
 }
 
 void CC3100::handle_irq() {
@@ -122,9 +128,11 @@ void CC3100::register_interrupt_handler(SL_P_EVENT_HANDLER InterruptHdlr,
 }
 
 void CC3100::mask_irq() {
+  irq_.disable_irq();
 }
 
 void CC3100::unmask_irq() {
+  irq_.enable_irq();
 }
 
 int CC3100::read(char *buf, int len) {
@@ -147,15 +155,14 @@ int CC3100::write(char *buf, int len) {
   return len;
 }
 
-int CC3100::wlan_connect(const char *ssid, const char *pass) {
+int CC3100::wlan_connect(const char *ssid, const char *pass,
+                         nsapi_security_t security) {
   SlSecParams_t sec_params;
   memset(&sec_params, 0, sizeof(sec_params));
   sec_params.Key = (signed char *) pass;
   sec_params.KeyLen = strlen(pass);
-  sec_params.Type = SL_SEC_TYPE_WPA_WPA2;
+  sec_params.Type = security;
 
-  uint8_t macLen = sizeof(mac_);
-  sl_NetCfgGet(SL_MAC_ADDRESS_GET, NULL, &macLen, mac_);
   debugf("SL: starting WiFi connect\n");
   return sl_WlanConnect((signed char *) ssid, strlen(ssid), 0, &sec_params,
                         NULL);
@@ -236,13 +243,21 @@ int SimpleLinkInterface::connect(const char *ssid, const char *pass,
     return res;
   }
 
+  int count = 0;
   while (true) {
     if (cc->ip_ != 0) {
       break;
     }
     _SlNonOsMainLoopTask();
-    wait(0.1);
+    wait_ms(1);
+    count++;
+
+    if (count > 30000) {
+      /* Timeout (~30 sec) */
+      return -1;
+    }
   }
+
   return 0;
 }
 
@@ -251,7 +266,7 @@ int SimpleLinkInterface::connect() {
     return -1;
   }
 
-  cc->wlan_connect(ssid_, pass_);
+  cc->wlan_connect(ssid_, pass_, security_);
   return 0;
 }
 
@@ -325,9 +340,10 @@ void mbed_sl_DeviceDisable() {
 }
 
 cs_sl_fd_t mbed_sl_IfOpen(char *ifname, int flags) {
-  // dummy fd, we need a global cc instance anyway becasue the
-  // interrupt and enable/disable HAL functions are nullary.
-  return 1;
+  cc->device_disable();
+  /* 50 ms is recommended in TI CC3100 example */
+  wait_ms(50);
+  return 0;
 }
 
 int mbed_sl_IfClose(cs_sl_fd_t fd) {
@@ -378,4 +394,8 @@ void mbed_sl_HttpServerCallback(SlHttpServerEvent_t *pSlHttpServerEvent,
 }
 
 void mbed_sl_SockEvtHdlr(SlSockEvent_t *pSlSockEvent) {
+}
+
+uint32_t mbed_sl_GetTimestamp() {
+  return us_ticker_read();
 }
